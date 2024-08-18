@@ -1,0 +1,24 @@
+{
+  "name": "investigacion-backend",
+  "version": "1.0.0",
+  "main": "app.js",
+  "scripts": {
+    "test": "node --watch app.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ezemastro/investigacion-backend.git"
+  },
+  "keywords": [
+    "backend",
+    "node",
+    "express"
+  ],
+  "author": "Ezequiel Mastropietro",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/ezemastro/investigacion-backend/issues"
+  },
+  "homepage": "https://github.com/ezemastro/investigacion-backend#readme",
+  "description": ""
+}
