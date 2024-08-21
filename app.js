@@ -1,7 +1,7 @@
 import express from 'express'
 import dotenv from 'dotenv'
 import sqlite3 from 'sqlite3'
-import cookie from 'cookie' // https://expressjs.com/resources/middleware/cookie-parser.html
+import cookieParser from 'cookie-parser'
 import { hash } from './utils/hash.js'
 import { userSchema } from './utils/zod.js'
 import { check } from './utils/check.js'
@@ -16,13 +16,16 @@ const db = new sqlite3.Database('./investigacion.db', sqlite3.OPEN_READWRITE, (e
 db.configure('busyTimeout', 5000)
 
 const app = express()
-app.use(cors())
+app.use(cors({
+  origin: 'http://localhost:5173',
+  credentials: true
+}))
 app.use(express.json())
+app.use(cookieParser())
 
 app.post('/mail', (req, res) => {
   const { email } = req.body
   const age = parseInt(req.body.age)
-
   // Validar los datos
   if (!userSchema.safeParse({ email, age }).success) {
     return res.status(400).json({
@@ -30,10 +33,8 @@ app.post('/mail', (req, res) => {
       age: userSchema.shape.age.safeParse(age).success
     })
   }
-
   const hashedEmail = hash(email)
   console.log(hashedEmail)
-
   // Serializar las operaciones en la base de datos para evitar bloqueos
   db.serialize(() => {
     db.get('SELECT * FROM users WHERE email = ?', [hashedEmail], (err, row) => {
@@ -54,11 +55,11 @@ app.post('/mail', (req, res) => {
           }
 
           const id = this.lastID
-          console.log(id, typeof id)
+          console.log(process.env.NODE_ENV === 'production')
           // Set cookies y responder
-          res.setHeader('Set-Cookie',
-            cookie.serialize('id', id.toString(), { httpOnly: true }) + ';' +
-            cookie.serialize('email', hashedEmail, { httpOnly: true }))
+          res
+            .cookie('id', id.toString(), { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'none' })
+            .cookie('email', hashedEmail, { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'none' })
             .status(201).send('User created')
         })
       }
@@ -66,15 +67,11 @@ app.post('/mail', (req, res) => {
   })
 })
 
-app.get('/check', (req, res) => {
-  const checkRes = check(req, db)
-  if (checkRes.email && checkRes.id) {
-    res.status(200).send('Authorized')
-  } else {
-    res.status(checkRes.status).send(checkRes.message)
+app.get('/survey', async (req, res) => {
+  const checkRes = await check(req, db)
+  if (!checkRes.email || !checkRes.id) {
+    return res.status(checkRes.status).send(checkRes.message)
   }
-})
-app.get('/survey', (req, res) => {
   db.all(`
     SELECT question_id, question_text, response_type, option_1, option_2, option_3, option_4 FROM survey_questions
     `, function (err, rows) {
@@ -91,15 +88,15 @@ app.get('/survey', (req, res) => {
     })))
   })
 })
-app.post('/survey', (req, res) => {
-  const checkRes = check(req, db)
+app.post('/survey', async (req, res) => {
+  const checkRes = await check(req, db)
   if (!checkRes.email || !checkRes.id) {
     res.status(checkRes.status).send(checkRes.message)
   } else if (checkRes.email && checkRes.id) {
-    if (!res.body.survey) return res.status(400).send('Missing survey')
-    const query = req.body.survey.map(ans => '(?, ?, ?)').join(', ')
-    const values = req.body.survey.map(ans => [ans.question_id, checkRes.id, ans.response]).flat()
-    if (!req.body.survey.question_id || !req.body.survey.response) return res.status(400).send('Missing question_id or response')
+    if (!Array.isArray(req.body)) return res.status(400).send('Missing survey')
+    const query = req.body.map(ans => '(?, ?, ?)').join(', ')
+    const values = req.body.map(ans => [ans.question_id, checkRes.id, ans.response]).flat()
+    if (req.body.filter(i => i.question_id && i.response).length < req.body.length) return res.status(400).send('Missing question_id or response')
     db.run(`
       INSERT INTO survey_responses (question_id, user_id, response) 
       VALUES ${query}
