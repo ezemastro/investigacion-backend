@@ -16,11 +16,15 @@ db.configure('busyTimeout', 5000)
 
 const app = express()
 app.use(cors({
-  origin: FRONTEND_URL,
+  origin: [FRONTEND_URL, 'http://localhost:5173'],
   credentials: true
 }))
 app.use(express.json())
 app.use(cookieParser())
+
+app.get('/download-db', (req, res) => {
+  res.download('./investigacion.db')
+})
 
 app.post('/mail', (req, res) => {
   const { email } = req.body
