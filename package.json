@@ -5,7 +5,9 @@
   "type": "module",
   "scripts": {
     "lint": "standard",
-    "dev": "node --watch app.js"
+    "dev": "node --watch app.js",
+    "start": "node app.js",
+    "build": "npm install --production"
   },
   "repository": {
     "type": "git",
