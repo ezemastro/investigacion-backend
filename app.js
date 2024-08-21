@@ -39,10 +39,7 @@ app.post('/mail', (req, res) => {
       age: userSchema.shape.age.safeParse(age).success
     })
   }
-
   const hashedEmail = hash(email)
-  console.log(hashedEmail)
-
   // Uso del pool de conexiones
   db.getConnection((err, connection) => { // **Cambio: Obtención de conexión del pool**
     if (err) {
@@ -51,7 +48,7 @@ app.post('/mail', (req, res) => {
     }
 
     // Consulta para verificar si el email ya existe
-    connection.query('SELECT * FROM users WHERE email = ?', [hashedEmail], (err, results) => { // **Cambio: Uso de query en lugar de get**
+    connection.query('SELECT * FROM Users WHERE email = ?', [hashedEmail], (err, results) => { // **Cambio: Uso de query en lugar de get**
       if (err) {
         console.error(err.message)
         connection.release() // **Cambio: Liberar conexión**
@@ -62,7 +59,7 @@ app.post('/mail', (req, res) => {
         return res.status(409).send('Email already exists')
       } else {
         // Inserción del nuevo usuario
-        connection.query('INSERT INTO users (email, age) VALUES (?, ?)', [hashedEmail, age], function (err) { // **Cambio: Uso de query en lugar de run**
+        connection.query('INSERT INTO Users (email, age) VALUES (?, ?)', [hashedEmail, age], function (err) { // **Cambio: Uso de query en lugar de run**
           if (err) {
             console.error(err.message)
             connection.release() // **Cambio: Liberar conexión**
@@ -99,7 +96,7 @@ app.get('/survey', async (req, res) => {
       return res.status(500).send('Failed while connecting to the database')
     }
 
-    connection.query('SELECT question_id, question_text, response_type, option_1, option_2, option_3, option_4 FROM survey_questions', (err, rows) => { // **Cambio: Uso de query en lugar de all**
+    connection.query('SELECT question_id, question_text, response_type, option_1, option_2, option_3, option_4 FROM Survey_Questions', (err, rows) => { // **Cambio: Uso de query en lugar de all**
       if (err) {
         console.error(err.message)
         connection.release()
@@ -136,7 +133,7 @@ app.post('/survey', async (req, res) => {
 
     // Inserción de respuestas de la encuesta
     connection.query(`
-      INSERT INTO survey_responses (question_id, user_id, response) 
+      INSERT INTO Survey_Responses (question_id, user_id, response) 
       VALUES ${query}
     `, values, function (err) {
       connection.release() // **Cambio: Liberar conexión**
@@ -164,7 +161,7 @@ app.get('/trivia/categories', async (req, res) => {
 
     // Consulta de categorías de trivia
     connection.query(`
-      SELECT category_id, category_name FROM trivia_categories
+      SELECT category_id, category_name FROM Trivia_Categories
     `, function (err, rows) {
       connection.release() // **Cambio: Liberar conexión**
       if (err) {
@@ -199,7 +196,7 @@ app.post('/trivia', async (req, res, next) => {
     }
 
     // Consulta de la cantidad de preguntas de trivia
-    connection.query(`SELECT COUNT(*) AS count FROM trivia_questions WHERE category_id = ? AND question_id NOT IN (${placeholders})`, [queryCategoryId, ...played], function (err, rows) {
+    connection.query(`SELECT COUNT(*) AS count FROM Trivia_Questions WHERE category_id = ? AND question_id NOT IN (${placeholders})`, [queryCategoryId, ...played], function (err, rows) {
       if (err) {
         connection.release() // **Cambio: Liberar conexión**
         console.error(err.message)
@@ -214,7 +211,7 @@ app.post('/trivia', async (req, res, next) => {
       const rnd = Math.floor(Math.random() * rows[0].count)
 
       connection.query(`
-        SELECT question_id, category_id, question_text, correct_answer, fake_answer_1, fake_answer_2, fake_answer_3 FROM trivia_questions
+        SELECT question_id, category_id, question_text, correct_answer, fake_answer_1, fake_answer_2, fake_answer_3 FROM Trivia_Questions
         WHERE category_id = ?
         AND question_id NOT IN (${placeholders})
         LIMIT 1 OFFSET ?
@@ -237,7 +234,7 @@ app.post('/trivia', async (req, res, next) => {
   })
 })
 
-app.post('/trivia/results', async (req, res) => { // **Cambio: Agregada la ruta /trivia/results para evitar colisión con la ruta /trivia**
+app.post('/trivia', async (req, res) => { // **Cambio: Agregada la ruta /trivia/results para evitar colisión con la ruta /trivia**
   const checkRes = await check(req, db)
   if (checkRes.err) return res.status(checkRes.status).send(checkRes.message)
   if (!checkRes.exist) return res.status(401).redirect(FRONTEND_URL + '/mail')
@@ -257,7 +254,7 @@ app.post('/trivia/results', async (req, res) => { // **Cambio: Agregada la ruta 
 
     // Inserción de respuestas de trivia
     connection.query(`
-      INSERT INTO trivia_responses (question_id, user_id, is_correct, response_time) 
+      INSERT INTO Trivia_Responses (question_id, user_id, is_correct, response_time) 
       VALUES ${query}
     `, values, function (err) {
       if (err) {
@@ -268,7 +265,7 @@ app.post('/trivia/results', async (req, res) => { // **Cambio: Agregada la ruta 
 
       // Actualización de información del usuario
       connection.query(`
-        UPDATE users
+        UPDATE Users
         SET bonus_category_id = ?
         `, req.body.userInfo.bonus_category_id, function (err) {
         connection.release() // **Cambio: Liberar conexión**

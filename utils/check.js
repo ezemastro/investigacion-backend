@@ -14,7 +14,7 @@ export const check = (req, db) => {
         })
       }
 
-      connection.query('SELECT * FROM users WHERE user_id = ? AND email = ?', [id, email], (err, rows) => {
+      connection.query('SELECT * FROM Users WHERE user_id = ? AND email = ?', [id, email], (err, rows) => {
         if (err) {
           connection.release() // **Cambio: Liberar conexión**
           return resolve({
@@ -35,7 +35,7 @@ export const check = (req, db) => {
         }
         trivia = true
 
-        connection.query('SELECT COUNT(*) AS count FROM survey_responses WHERE user_id = ?', [id], (err, rows) => {
+        connection.query('SELECT COUNT(*) AS count FROM Survey_Responses WHERE user_id = ?', [id], (err, rows) => {
           connection.release() // **Cambio: Liberar conexión**
           if (err) return resolve({ err: true, status: 500, message: 'Failed while getting survey' })
           if (rows[0].count > 0) survey = true
