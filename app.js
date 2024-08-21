@@ -1,12 +1,11 @@
 import express from 'express'
-import dotenv from 'dotenv'
 import sqlite3 from 'sqlite3'
 import cookieParser from 'cookie-parser'
 import { hash } from './utils/hash.js'
 import { userSchema } from './utils/zod.js'
 import { check } from './utils/check.js'
 import cors from 'cors'
-dotenv.config()
+
 const { PORT, FRONTEND_URL } = process.env
 
 sqlite3.verbose()
