@@ -24,10 +24,6 @@ app.use(cors({
 app.use(express.json())
 app.use(cookieParser())
 
-app.get('/download-db', (req, res) => {
-  res.download('./investigacion.db')
-})
-
 app.post('/mail', (req, res) => {
   const { email } = req.body
   const age = parseInt(req.body.age)
@@ -66,7 +62,7 @@ app.post('/mail', (req, res) => {
             return res.status(500).send('Failed while inserting email and age')
           }
 
-          const id = this.insertId // **Cambio: Uso de insertId en lugar de lastID**
+          const id = results.insertId // **Cambio: Uso de insertId en lugar de lastID**
 
           // Set cookies y responder
           res
