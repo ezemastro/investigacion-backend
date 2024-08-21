@@ -7,7 +7,7 @@ import { userSchema } from './utils/zod.js'
 import { check } from './utils/check.js'
 import cors from 'cors'
 dotenv.config()
-const { PORT } = process.env
+const { PORT, FRONTEND_URL } = process.env
 
 sqlite3.verbose()
 const db = new sqlite3.Database('./investigacion.db', sqlite3.OPEN_READWRITE, (err) => {
@@ -17,7 +17,7 @@ db.configure('busyTimeout', 5000)
 
 const app = express()
 app.use(cors({
-  origin: 'http://localhost:5173',
+  origin: FRONTEND_URL,
   credentials: true
 }))
 app.use(express.json())
@@ -55,11 +55,12 @@ app.post('/mail', (req, res) => {
           }
 
           const id = this.lastID
-          console.log(process.env.NODE_ENV === 'production')
           // Set cookies y responder
           res
-            .cookie('id', id.toString(), { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'none' })
-            .cookie('email', hashedEmail, { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'none' })
+            .clearCookie('id', { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'lax' })
+            .clearCookie('email', { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'lax' })
+            .cookie('id', id.toString(), { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'lax', maxAge: 60 * 60 * 1000 })
+            .cookie('email', hashedEmail, { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'lax', maxAge: 60 * 60 * 1000 })
             .status(201).send('User created')
         })
       }
@@ -69,34 +70,41 @@ app.post('/mail', (req, res) => {
 
 app.get('/survey', async (req, res) => {
   const checkRes = await check(req, db)
-  if (!checkRes.email || !checkRes.id) {
-    return res.status(checkRes.status).send(checkRes.message)
-  }
-  db.all(`
-    SELECT question_id, question_text, response_type, option_1, option_2, option_3, option_4 FROM survey_questions
-    `, function (err, rows) {
-    if (err) {
-      console.error(err.message)
-      res.status(500).send('Failed while getting survey')
-      return
-    }
-    res.status(200).send(rows.map(row => ({
-      question_id: row.question_id,
-      question_text: row.question_text,
-      response_type: row.response_type,
-      options: [row.option_1, row.option_2, row.option_3, row.option_4]
-    })))
+  if (checkRes.err) return res.status(checkRes.status).send(checkRes.message)
+  if (!checkRes.exist) return res.status(401).redirect(FRONTEND_URL + '/mail')
+  if (checkRes.survey && !checkRes.trivia) return res.redirect(FRONTEND_URL + '/trivia')
+  if (checkRes.survey && checkRes.trivia) return res.redirect(FRONTEND_URL + '/gracias')
+
+  db.serialize(() => {
+    db.all(`
+      SELECT question_id, question_text, response_type, option_1, option_2, option_3, option_4 FROM survey_questions
+      `, function (err, rows) {
+      if (err) {
+        console.error(err.message)
+        res.status(500).send('Failed while getting survey')
+        return
+      }
+      res.status(200).send(rows.map(row => ({
+        question_id: row.question_id,
+        question_text: row.question_text,
+        response_type: row.response_type,
+        options: [row.option_1, row.option_2, row.option_3, row.option_4]
+      })))
+    })
   })
 })
 app.post('/survey', async (req, res) => {
   const checkRes = await check(req, db)
-  if (!checkRes.email || !checkRes.id) {
-    res.status(checkRes.status).send(checkRes.message)
-  } else if (checkRes.email && checkRes.id) {
-    if (!Array.isArray(req.body)) return res.status(400).send('Missing survey')
-    const query = req.body.map(ans => '(?, ?, ?)').join(', ')
-    const values = req.body.map(ans => [ans.question_id, checkRes.id, ans.response]).flat()
-    if (req.body.filter(i => i.question_id && i.response).length < req.body.length) return res.status(400).send('Missing question_id or response')
+  if (checkRes.err) return res.status(checkRes.status).send(checkRes.message)
+  if (!checkRes.exist) return res.status(401).redirect(FRONTEND_URL + '/mail')
+  if (checkRes.survey && !checkRes.trivia) return res.redirect(FRONTEND_URL + '/trivia')
+  if (checkRes.survey && checkRes.trivia) return res.redirect(FRONTEND_URL + '/gracias')
+
+  if (!Array.isArray(req.body)) return res.status(400).send('Missing survey')
+  const query = req.body.map(ans => '(?, ?, ?)').join(', ')
+  const values = req.body.map(ans => [ans.question_id, checkRes.id, ans.response]).flat()
+  if (req.body.filter(i => i.question_id && i.response).length < req.body.length) return res.status(400).send('Missing question_id or response')
+  db.serialize(() => {
     db.run(`
       INSERT INTO survey_responses (question_id, user_id, response) 
       VALUES ${query}
@@ -107,108 +115,110 @@ app.post('/survey', async (req, res) => {
       }
       res.status(201).send('Survey created')
     })
-  }
-})
-
-app.post('/trivia', (req, res) => {
-  const checkRes = check(req, db)
-  if (!checkRes.email || !checkRes.id) {
-    res.status(checkRes.status).send(checkRes.message)
-  } else if (checkRes.email && checkRes.id) {
-    if (!res.body.survey) return res.status(400).send('Missing survey')
-
-    db.run(`
-      INSERT INTO survey_responses (question_id, user_id, response) 
-      VALUES (%question_id, %user_id, %response)
-    `, {
-      question_id: req.body.survey.question_id,
-      user_id: checkRes.id,
-      response: req.body.survey.response
-    }, function (err) {
-      if (err) {
-        console.error(err.message)
-        res.status(500).send('Failed while inserting survey')
-      }
-      res.status(201).send('Survey created')
-    })
-  }
-})
-app.get('/trivia/categories', (req, res) => {
-  db.all(`
-    SELECT category_id, category_name FROM trivia_categories
-    `, function (err, rows) {
-    if (err) {
-      console.error(err.message)
-      res.status(500).send('Failed while getting trivia categories')
-      return
-    }
-    res.status(200).send(rows.map(row => ({
-      category_id: row.category_id,
-      category_name: row.category_name
-    })))
   })
 })
-app.get('/trivia', (req, res) => {
-  if (!req.query.category_id) {
-    res.status(400).send('Missing category_id')
-    return
-  }
-  const queryCategoryId = parseInt(req.query.category_id)
-  db.get('SELECT COUNT(*) AS count FROM trivia_questions WHERE category_id = ?', [queryCategoryId], function (err, row) {
-    if (err) {
-      console.error(err.message)
-      res.status(500).send('Failed while getting trivia questions')
-      return
-    }
-    if (row.count <= 0) return res.status(404).send('No trivia questions found')
 
-    // select random trivia question
-    let rnd
-    const played = Array.isArray(req.body)
-      ? req.body.find(i => i.category_id === queryCategoryId)?.played || []
-      : []
-    if (played) {
-      rnd = Math.floor(Math.random() * (row.count - played.length))
-    } else rnd = Math.floor(Math.random() * row.count)
+app.get('/trivia/categories', async (req, res) => {
+  const checkRes = await check(req, db)
+  if (checkRes.err) return res.status(checkRes.status).send(checkRes.message)
+  if (!checkRes.exist) return res.status(401).redirect(FRONTEND_URL + '/mail')
+  if (checkRes.survey && !checkRes.trivia) return res.redirect(FRONTEND_URL + '/trivia')
+  if (checkRes.survey && checkRes.trivia) return res.redirect(FRONTEND_URL + '/gracias')
 
-    const placeholders = played ? played.map(i => '?').join(', ') : ''
-    db.get(`
-      SELECT question_id, question_text, correct_answer, fake_answer_1, fake_answer_2, fake_answer_3 FROM trivia_questions
-      WHERE category_id = ?
-      AND question_id NOT IN (${placeholders})
-      LIMIT 1 OFFSET ?
-      `, [queryCategoryId, ...played, rnd], function (err, row) {
+  db.serialize(() => {
+    db.all(`
+    SELECT category_id, category_name FROM trivia_categories
+    `, function (err, rows) {
       if (err) {
         console.error(err.message)
         res.status(500).send('Failed while getting trivia categories')
         return
       }
-      if (!row) return res.status(404).send('No trivia questions found')
-      res.status(200).send(row)
+      res.status(200).send(rows.map(row => ({
+        category_id: row.category_id,
+        category_name: row.category_name
+      })))
     })
   })
 })
-app.post('/trivia', (req, res) => {
-  const checkRes = check(req, db)
-  if (!checkRes.email || !checkRes.id) {
-    res.status(checkRes.status).send(checkRes.message)
-  } else if (checkRes.email && checkRes.id && req.body.question_id && req.body.is_correct && req.body.response_time) {
-    db.run(`
-      INSERT INTO trivia_responses (question_id, user_id, is_correct, response_time) 
-      VALUES (%question_id, %user_id, %is_correct, %response_time)
-    `, {
-      question_id: req.body.question_id,
-      user_id: checkRes.id,
-      is_correct: req.body.is_correct,
-      response_time: req.body.response_time
-    }, function (err) {
+app.post('/trivia', async (req, res, next) => {
+  if (!req.query.category_id) return next()
+
+  const checkRes = await check(req, db)
+  if (checkRes.err) return res.status(checkRes.status).send(checkRes.message)
+  if (!checkRes.exist) return res.status(401).redirect(FRONTEND_URL + '/mail')
+  if (checkRes.survey && !checkRes.trivia) return res.redirect(FRONTEND_URL + '/trivia')
+  if (checkRes.survey && checkRes.trivia) return res.redirect(FRONTEND_URL + '/gracias')
+
+  const played = req.body.played ? req.body.played.find(i => i.category_id === req.query.category_id)?.questions_id : []
+  const queryCategoryId = parseInt(req.query.category_id)
+  const placeholders = played ? played.map(i => '?').join(', ') : ''
+  db.serialize(() => {
+    db.get(`SELECT COUNT(*) AS count FROM trivia_questions WHERE category_id = ? AND question_id NOT IN (${placeholders})`, [queryCategoryId, ...played], function (err, row) {
       if (err) {
         console.error(err.message)
-        res.status(500).send('Failed while inserting trivia answer')
+        res.status(500).send('Failed while getting trivia questions')
+        return
       }
-      res.status(201).send('Trivia answer created')
+      if (row.count <= 0) return res.status(404).send('No trivia questions found')
+
+      // select random trivia question
+      const rnd = Math.floor(Math.random() * row.count)
+
+      db.get(`
+        SELECT question_id, category_id, question_text, correct_answer, fake_answer_1, fake_answer_2, fake_answer_3 FROM trivia_questions
+        WHERE category_id = ?
+        AND question_id NOT IN (${placeholders})
+        LIMIT 1 OFFSET ?
+        `, [queryCategoryId, ...played, rnd], function (err, row) {
+        if (err) {
+          console.error(err.message)
+          res.status(500).send('Failed while getting trivia categories')
+          return
+        }
+        if (!row) return res.status(404).send('No trivia questions found')
+        row.options = [row.correct_answer, row.fake_answer_1, row.fake_answer_2, row.fake_answer_3]
+        delete row.correct_answer
+        delete row.fake_answer_1
+        delete row.fake_answer_2
+        delete row.fake_answer_3
+        res.status(200).send(row)
+      })
     })
-  } else res.status(400).send('Missing data')
+  })
+})
+app.post('/trivia', async (req, res) => {
+  const checkRes = await check(req, db)
+  if (checkRes.err) return res.status(checkRes.status).send(checkRes.message)
+  if (!checkRes.exist) return res.status(401).redirect(FRONTEND_URL + '/mail')
+  if (checkRes.survey && !checkRes.trivia) return res.redirect(FRONTEND_URL + '/trivia')
+  if (checkRes.survey && checkRes.trivia) return res.redirect(FRONTEND_URL + '/gracias')
+
+  if (!Array.isArray(req.body.results) || !req.body.userInfo) return res.status(400).send('Missing trivia')
+  const query = req.body.results.map(ans => '(?, ?, ?, ?)').join(', ')
+  const values = req.body.results.map(ans => [ans.question_id, checkRes.id, ans.is_correct, ans.response_time]).flat()
+  if (req.body.results.filter(i => i.question_id && i.is_correct && i.response_time).length < req.body.results.length) return res.status(400).send('Missing question_id or response')
+  db.serialize(() => {
+    db.run(`
+      INSERT INTO trivia_responses (question_id, user_id, is_correct, response_time) 
+      VALUES ${query}
+    `, values, function (err) {
+      if (err) {
+        console.error(err.message)
+        res.status(500).send('Failed while inserting survey')
+      }
+    })
+    db.run(`
+      UPDATE users
+      SET bonus_category_id = ?
+      `, req.body.userInfo.bonus_category_id, function (err) {
+      if (err) {
+        console.error(err.message)
+        res.status(500).send('Failed while inserting user info')
+      }
+      res.status(201).send('Survey created and User info added')
+    })
+  })
 })
 
 app.listen(PORT, () => {
