@@ -1,30 +1,46 @@
 export const check = (req, db) => {
   let exist, survey, trivia
   return new Promise((resolve, reject) => {
-    if (!req.headers.cookie) resolve({ exist: false })
+    if (!req.headers.cookie) return resolve({ exist: false })
     const { id, email } = req.cookies
-    if (!id || !email) resolve({ exist: false })
-    db.serialize(() => {
-      db.get('SELECT * FROM users WHERE user_id = ? AND email = ?', [id, email], (err, row) => {
+    if (!id || !email) return resolve({ exist: false })
+
+    db.getConnection((err, connection) => { // **Cambio: Obtención de conexión del pool**
+      if (err) {
+        return resolve({
+          err: true,
+          status: 500,
+          message: 'Failed while connecting to the database'
+        })
+      }
+
+      connection.query('SELECT * FROM users WHERE user_id = ? AND email = ?', [id, email], (err, rows) => {
         if (err) {
-          resolve({
+          connection.release() // **Cambio: Liberar conexión**
+          return resolve({
             err: true,
             status: 500,
             message: 'Failed while getting email'
           })
         }
-        if (!row) {
-          resolve({ exist: false })
-        } else {
-          exist = true
-          if (!row.bonus_category_id) resolve({ email, id, exist, survey, trivia })
-          trivia = true
+        if (!rows.length) {
+          connection.release() // **Cambio: Liberar conexión**
+          return resolve({ exist: false })
         }
-      })
-      db.get('SELECT COUNT(*) FROM survey_responses WHERE user_id = ?', [id], (err, row) => {
-        if (err) resolve({ err: true, status: 500, message: 'Failed while getting survey' })
-        if (row) survey = true
-        resolve({ email, id, exist, survey, trivia })
+
+        exist = true
+        if (!rows[0].bonus_category_id) {
+          connection.release() // **Cambio: Liberar conexión**
+          return resolve({ email, id, exist, survey, trivia })
+        }
+        trivia = true
+
+        connection.query('SELECT COUNT(*) AS count FROM survey_responses WHERE user_id = ?', [id], (err, rows) => {
+          connection.release() // **Cambio: Liberar conexión**
+          if (err) return resolve({ err: true, status: 500, message: 'Failed while getting survey' })
+          if (rows[0].count > 0) survey = true
+          resolve({ email, id, exist, survey, trivia })
+        })
       })
     })
   })
