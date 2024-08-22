@@ -7,7 +7,6 @@ import { check } from './utils/check.js'
 import cors from 'cors'
 
 const { PORT, FRONTEND_URL, DB_HOST, DB_USER, DB_PASSWORD, DB_DATABASE, DB_PORT } = process.env
-console.log({ FRONTEND_URL })
 
 const db = mysql.createPool({ // **Cambio: Creación de pool de conexiones en lugar de base de datos SQLite**
   host: DB_HOST ?? 'wvk.h.filess.io', // Cambia esto según tu configuración
@@ -18,17 +17,10 @@ const db = mysql.createPool({ // **Cambio: Creación de pool de conexiones en lu
 })
 
 const app = express()
-// app.use(cors({
-//   origin: [FRONTEND_URL, 'http://localhost:5173'],
-//   credentials: true
-// }))
-app.use((req, res, next) => {
-  res.header('Access-Control-Allow-Origin', FRONTEND_URL)
-  res.header('Access-Control-Allow-Credentials', 'true')
-  res.header('Access-Control-Allow-Methods', 'GET,HEAD,OPTIONS,POST,PUT')
-  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization')
-  next()
-})
+app.use(cors({
+  origin: [FRONTEND_URL, 'http://localhost:5173'],
+  credentials: true
+}))
 app.use(express.json())
 app.use(cookieParser())
 
@@ -63,7 +55,7 @@ app.post('/mail', (req, res) => {
         return res.status(409).send('Email already exists')
       } else {
         // Inserción del nuevo usuario
-        connection.query('INSERT INTO Users (email, age) VALUES (?, ?)', [hashedEmail, age], function (err) { // **Cambio: Uso de query en lugar de run**
+        connection.query('INSERT INTO Users (email, age) VALUES (?, ?)', [hashedEmail, age], function (err, results) { // **Cambio: Uso de query en lugar de run**
           if (err) {
             console.error(err.message)
             connection.release() // **Cambio: Liberar conexión**
