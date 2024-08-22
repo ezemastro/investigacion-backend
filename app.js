@@ -63,13 +63,14 @@ app.post('/mail', (req, res) => {
           }
 
           const id = results.insertId // **Cambio: Uso de insertId en lugar de lastID**
+          console.log({ id, hashedEmail })
 
           // Set cookies y responder
           res
-            .clearCookie('id', { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'lax' })
-            .clearCookie('email', { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'lax' })
-            .cookie('id', id.toString(), { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'lax', maxAge: 60 * 60 * 1000 })
-            .cookie('email', hashedEmail, { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'lax', maxAge: 60 * 60 * 1000 })
+            .clearCookie('id', { httpOnly: true })
+            .clearCookie('email', { httpOnly: true })
+            .cookie('id', id.toString(), { httpOnly: true, maxAge: 60 * 60 * 1000 })
+            .cookie('email', hashedEmail, { httpOnly: true, maxAge: 60 * 60 * 1000 })
             .status(201).send('User created')
 
           connection.release() // **Cambio: Liberar conexión**
@@ -80,6 +81,7 @@ app.post('/mail', (req, res) => {
 })
 
 app.get('/survey', async (req, res) => {
+  console.log(req.cookies)
   const checkRes = await check(req, db)
   if (checkRes.err) return res.status(checkRes.status).send(checkRes.message)
   if (!checkRes.exist) return res.status(401).redirect(FRONTEND_URL + '/mail')
