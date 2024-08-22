@@ -15,10 +15,12 @@ const db = mysql.createPool({ // **Cambio: Creación de pool de conexiones en lu
   database: DB_DATABASE ?? 'investigacion_questionus', // Cambia esto según tu configuración
   port: DB_PORT ?? '3307'
 })
-
+// [FRONTEND_URL, 'http://localhost:5173', 'wvk.h.filess.io', 'https://lectura-vs-conocimiento.vercel.app']
 const app = express()
 app.use(cors({
-  origin: [FRONTEND_URL, 'http://localhost:5173', 'wvk.h.filess.io', 'https://lectura-vs-conocimiento.vercel.app'],
+  origin: 'https://lectura-vs-conocimiento.vercel.app',
+  methods: ['GET', 'POST', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
   credentials: true
 }))
 app.use(express.json())
