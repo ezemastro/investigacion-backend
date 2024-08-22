@@ -69,10 +69,10 @@ app.post('/mail', (req, res) => {
 
           // Set cookies y responder
           res
-            .clearCookie('id', { httpOnly: true })
-            .clearCookie('email', { httpOnly: true })
-            .cookie('id', id.toString(), { httpOnly: true, maxAge: 60 * 60 * 1000 })
-            .cookie('email', hashedEmail, { httpOnly: true, maxAge: 60 * 60 * 1000 })
+            .clearCookie('id', { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'None' })
+            .clearCookie('email', { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'None' })
+            .cookie('id', id.toString(), { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'None', maxAge: 60 * 60 * 1000 })
+            .cookie('email', hashedEmail, { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'None', maxAge: 60 * 60 * 1000 })
             .status(201).send('User created')
 
           connection.release() // **Cambio: Liberar conexión**
