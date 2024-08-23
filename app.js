@@ -18,7 +18,7 @@ const db = mysql.createPool({ // **Cambio: Creación de pool de conexiones en lu
 // [FRONTEND_URL, 'http://localhost:5173', 'wvk.h.filess.io', 'https://lectura-vs-conocimiento.vercel.app']
 const app = express()
 app.use(cors({
-  origin: 'https://lectura-vs-conocimiento.vercel.app',
+  origin: process.env.NODE_ENV === 'production' ? 'https://lectura-vs-conocimiento.vercel.app' : 'http://localhost:5173',
   methods: ['GET', 'POST', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
   credentials: true
@@ -69,10 +69,10 @@ app.post('/mail', (req, res) => {
 
           // Set cookies y responder
           res
-            .clearCookie('id', { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'None' })
-            .clearCookie('email', { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'None' })
-            .cookie('id', id.toString(), { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'None', maxAge: 60 * 60 * 1000 })
-            .cookie('email', hashedEmail, { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'None', maxAge: 60 * 60 * 1000 })
+            .clearCookie('id', { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: process.env.NODE_ENV === 'production' ? 'None' : 'lax' })
+            .clearCookie('email', { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: process.env.NODE_ENV === 'production' ? 'None' : 'lax' })
+            .cookie('id', id.toString(), { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: process.env.NODE_ENV === 'production' ? 'None' : 'lax', maxAge: 60 * 60 * 1000 })
+            .cookie('email', hashedEmail, { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: process.env.NODE_ENV === 'production' ? 'None' : 'lax', maxAge: 60 * 60 * 1000 })
             .status(201).send('User created')
 
           connection.release() // **Cambio: Liberar conexión**
