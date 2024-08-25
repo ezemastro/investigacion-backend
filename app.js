@@ -84,9 +84,9 @@ app.post('/mail', (req, res) => {
 app.get('/survey', async (req, res) => {
   const checkRes = await check(req, db)
   if (checkRes.err) return res.status(checkRes.status).send(checkRes.message)
-  if (!checkRes.exist) return res.status(401).redirect(FRONTEND_URL + '/mail')
-  if (checkRes.survey && !checkRes.trivia) return res.redirect(FRONTEND_URL + '/trivia')
-  if (checkRes.survey && checkRes.trivia) return res.redirect(FRONTEND_URL + '/gracias')
+  if (!checkRes.exist) return res.status(401).json({ redirect: '/mail' })
+  if (checkRes.survey && !checkRes.trivia) return res.status(421).json({ redirect: '/trivia' })
+  if (checkRes.survey && checkRes.trivia) return res.status(421).json({ redirect: '/gracias' })
 
   db.getConnection((err, connection) => { // **Cambio: Obtención de conexión del pool**
     if (err) {
@@ -114,9 +114,9 @@ app.get('/survey', async (req, res) => {
 app.post('/survey', async (req, res) => {
   const checkRes = await check(req, db)
   if (checkRes.err) return res.status(checkRes.status).send(checkRes.message)
-  if (!checkRes.exist) return res.status(401).redirect(FRONTEND_URL + '/mail')
-  if (checkRes.survey && !checkRes.trivia) return res.redirect(FRONTEND_URL + '/trivia')
-  if (checkRes.survey && checkRes.trivia) return res.redirect(FRONTEND_URL + '/gracias')
+  if (!checkRes.exist) return res.status(401).json({ redirect: '/mail' })
+  if (checkRes.survey && !checkRes.trivia) return res.status(421).json({ redirect: '/trivia' })
+  if (checkRes.survey && checkRes.trivia) return res.status(421).json({ redirect: '/gracias' })
 
   if (!Array.isArray(req.body)) return res.status(400).send('Missing survey')
   const query = req.body.map(ans => '(?, ?, ?)').join(', ')
@@ -147,8 +147,8 @@ app.post('/survey', async (req, res) => {
 app.get('/trivia/categories', async (req, res) => {
   const checkRes = await check(req, db)
   if (checkRes.err) return res.status(checkRes.status).send(checkRes.message)
-  if (!checkRes.exist) return res.status(401).redirect(FRONTEND_URL + '/mail')
-  if (checkRes.survey && checkRes.trivia) return res.redirect(FRONTEND_URL + '/gracias')
+  if (!checkRes.exist) return res.status(401).json({ redirect: '/mail' })
+  if (checkRes.survey && checkRes.trivia) return res.status(421).json({ redirect: '/gracias' })
 
   db.getConnection((err, connection) => { // **Cambio: Obtención de conexión del pool**
     if (err) {
@@ -178,8 +178,8 @@ app.post('/trivia', async (req, res) => {
 
   const checkRes = await check(req, db)
   if (checkRes.err) return res.status(checkRes.status).send(checkRes.message)
-  if (!checkRes.exist) return res.status(401).redirect(FRONTEND_URL + '/mail')
-  if (checkRes.survey && checkRes.trivia) return res.redirect(FRONTEND_URL + '/gracias')
+  if (!checkRes.exist) return res.status(401).json({ redirect: '/mail' })
+  if (checkRes.survey && checkRes.trivia) return res.status(421).json({ redirect: '/gracias' })
 
   const played = req.body.played ? (req.body.played.find(i => parseInt(i.category_id) === parseInt(req.query.category_id)) ? req.body.played.find(i => parseInt(i.category_id) === parseInt(req.query.category_id)).questions_id : []) : []
   const queryCategoryId = parseInt(req.query.category_id)
@@ -218,8 +218,8 @@ app.post('/trivia', async (req, res) => {
 app.post('/trivia/send', async (req, res) => { // resultados de la trivia
   const checkRes = await check(req, db)
   if (checkRes.err) return res.status(checkRes.status).send(checkRes.message)
-  if (!checkRes.exist) return res.status(401).redirect(FRONTEND_URL + '/mail')
-  if (checkRes.survey && checkRes.trivia) return res.redirect(FRONTEND_URL + '/gracias')
+  if (!checkRes.exist) return res.status(401).json({ redirect: '/mail' })
+  if (checkRes.survey && checkRes.trivia) return res.status(421).json({ redirect: '/gracias' })
 
   if (!Array.isArray(req.body.results) || !req.body.userInfo) return res.status(400).send('Missing trivia')
   if (req.body.results.filter(i => i.question_id !== undefined && i.is_correct !== undefined && i.response_time !== undefined).length < req.body.results.length) return res.status(400).send('Missing question_id or response')
