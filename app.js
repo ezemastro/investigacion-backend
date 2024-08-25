@@ -176,8 +176,8 @@ app.get('/trivia/categories', async (req, res) => {
   })
 })
 
-app.post('/trivia', async (req, res, next) => {
-  if (!req.query.category_id) return next()
+app.post('/trivia', async (req, res) => {
+  if (!req.query.category_id) return res.status(400).send('Missing category_id')
 
   const checkRes = await check(req, db)
   if (checkRes.err) return res.status(checkRes.status).send(checkRes.message)
@@ -185,9 +185,9 @@ app.post('/trivia', async (req, res, next) => {
   if (checkRes.survey && !checkRes.trivia) return res.redirect(FRONTEND_URL + '/trivia')
   if (checkRes.survey && checkRes.trivia) return res.redirect(FRONTEND_URL + '/gracias')
 
-  const played = req.body.played ? req.body.played.find(i => i.category_id === req.query.category_id)?.questions_id : []
+  const played = req.body.played ? (req.body.played.find(i => i.category_id === req.query.category_id) ? req.body.played.find(i => i.category_id === req.query.category_id).questions_id : []) : []
   const queryCategoryId = parseInt(req.query.category_id)
-  const placeholders = played ? played.map(i => '?').join(', ') : ''
+  const placeholders = played ? played.map(() => '?').join(', ') : ''
 
   db.getConnection((err, connection) => { // **Cambio: Obtención de conexión del pool**
     if (err) {
@@ -195,56 +195,43 @@ app.post('/trivia', async (req, res, next) => {
       return res.status(500).send('Failed while connecting to the database')
     }
 
-    // Consulta de la cantidad de preguntas de trivia
-    connection.query(`SELECT COUNT(*) AS count FROM Trivia_Questions WHERE category_id = ? AND question_id NOT IN (${placeholders})`, [queryCategoryId, ...played], function (err, rows) {
-      if (err) {
-        connection.release() // **Cambio: Liberar conexión**
-        console.error(err.message)
-        return res.status(500).send('Failed while getting trivia questions')
-      }
-      if (rows[0].count <= 0) {
-        connection.release() // **Cambio: Liberar conexión**
-        return res.status(404).send('No trivia questions found')
-      }
-
-      // Selección de pregunta de trivia aleatoria
-      const rnd = Math.floor(Math.random() * rows[0].count)
-
-      connection.query(`
+    connection.query(`
         SELECT question_id, category_id, question_text, correct_answer, fake_answer_1, fake_answer_2, fake_answer_3 FROM Trivia_Questions
         WHERE category_id = ?
-        AND question_id NOT IN (${placeholders})
-        LIMIT 1 OFFSET ?
-        `, [queryCategoryId, ...played, rnd], function (err, rows) {
-        connection.release() // **Cambio: Liberar conexión**
-        if (err) {
-          console.error(err.message)
-          return res.status(500).send('Failed while getting trivia categories')
-        }
-        if (!rows[0]) return res.status(404).send('No trivia questions found')
-        const row = rows[0]
-        row.options = [row.correct_answer, row.fake_answer_1, row.fake_answer_2, row.fake_answer_3]
-        delete row.correct_answer
-        delete row.fake_answer_1
-        delete row.fake_answer_2
-        delete row.fake_answer_3
-        res.status(200).send(row)
-      })
+        ${played.length > 0 ? `AND question_id NOT IN (${placeholders})` : ''}
+        ORDER BY RAND()
+        LIMIT 1
+        `, played.length > 0 ? [queryCategoryId, ...played] : [queryCategoryId], function (err, rows) {
+      connection.release() // **Cambio: Liberar conexión**
+      if (err) {
+        console.error(err.message)
+        return res.status(500).send('Failed while getting trivia categories')
+      }
+      if (!rows[0]) return res.status(404).send('No trivia questions found')
+      const row = rows[0]
+      row.options = [row.correct_answer, row.fake_answer_1, row.fake_answer_2, row.fake_answer_3]
+      delete row.correct_answer
+      delete row.fake_answer_1
+      delete row.fake_answer_2
+      delete row.fake_answer_3
+      res.status(200).send(row)
     })
   })
 })
 
-app.post('/trivia', async (req, res) => { // **Cambio: Agregada la ruta /trivia/results para evitar colisión con la ruta /trivia**
+app.post('/trivia/send', async (req, res) => { // resultados de la trivia
   const checkRes = await check(req, db)
   if (checkRes.err) return res.status(checkRes.status).send(checkRes.message)
   if (!checkRes.exist) return res.status(401).redirect(FRONTEND_URL + '/mail')
   if (checkRes.survey && !checkRes.trivia) return res.redirect(FRONTEND_URL + '/trivia')
   if (checkRes.survey && checkRes.trivia) return res.redirect(FRONTEND_URL + '/gracias')
-
+  console.log(req.body.results)
+  console.log(Array.isArray(req.body.results))
+  console.log(req.body.userInfo)
   if (!Array.isArray(req.body.results) || !req.body.userInfo) return res.status(400).send('Missing trivia')
+  if (req.body.results.filter(i => i.question_id !== undefined && i.is_correct !== undefined && i.response_time !== undefined).length < req.body.results.length) return res.status(400).send('Missing question_id or response')
   const query = req.body.results.map(ans => '(?, ?, ?, ?)').join(', ')
-  const values = req.body.results.map(ans => [ans.question_id, checkRes.id, ans.is_correct, ans.response_time]).flat()
-  if (req.body.results.filter(i => i.question_id && i.is_correct && i.response_time).length < req.body.results.length) return res.status(400).send('Missing question_id or response')
+  const values = req.body.results.map(ans => [ans.question_id, checkRes.id, ans.is_correct ? 1 : 0, ans.response_time]).flat()
 
   db.getConnection((err, connection) => { // **Cambio: Obtención de conexión del pool**
     if (err) {
@@ -267,7 +254,8 @@ app.post('/trivia', async (req, res) => { // **Cambio: Agregada la ruta /trivia/
       connection.query(`
         UPDATE Users
         SET bonus_category_id = ?
-        `, req.body.userInfo.bonus_category_id, function (err) {
+        WHERE user_id = ?
+        `, [req.body.userInfo.bonus_category_id, checkRes.id], function (err) {
         connection.release() // **Cambio: Liberar conexión**
         if (err) {
           console.error(err.message)
