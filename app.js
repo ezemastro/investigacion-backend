@@ -65,7 +65,6 @@ app.post('/mail', (req, res) => {
           }
 
           const id = results.insertId // **Cambio: Uso de insertId en lugar de lastID**
-          console.log({ id, hashedEmail })
 
           // Set cookies y responder
           res
@@ -83,7 +82,6 @@ app.post('/mail', (req, res) => {
 })
 
 app.get('/survey', async (req, res) => {
-  console.log(req.cookies)
   const checkRes = await check(req, db)
   if (checkRes.err) return res.status(checkRes.status).send(checkRes.message)
   if (!checkRes.exist) return res.status(401).redirect(FRONTEND_URL + '/mail')
@@ -148,7 +146,6 @@ app.post('/survey', async (req, res) => {
 
 app.get('/trivia/categories', async (req, res) => {
   const checkRes = await check(req, db)
-  console.log(checkRes)
   if (checkRes.err) return res.status(checkRes.status).send(checkRes.message)
   if (!checkRes.exist) return res.status(401).redirect(FRONTEND_URL + '/mail')
   if (checkRes.survey && checkRes.trivia) return res.redirect(FRONTEND_URL + '/gracias')
