@@ -123,7 +123,7 @@ app.post('/survey', async (req, res) => {
   if (!Array.isArray(req.body)) return res.status(400).send('Missing survey')
   const query = req.body.map(ans => '(?, ?, ?)').join(', ')
   const values = req.body.map(ans => [ans.question_id, checkRes.id, ans.response]).flat()
-  if (req.body.filter(i => i.question_id && i.response).length < req.body.length) return res.status(400).send('Missing question_id or response')
+  if (req.body.filter(i => i.question_id !== undefined && i.response !== undefined).length < req.body.length) return res.status(400).send('Missing question_id or response')
 
   db.getConnection((err, connection) => { // **Cambio: Obtención de conexión del pool**
     if (err) {
@@ -148,9 +148,9 @@ app.post('/survey', async (req, res) => {
 
 app.get('/trivia/categories', async (req, res) => {
   const checkRes = await check(req, db)
+  console.log(checkRes)
   if (checkRes.err) return res.status(checkRes.status).send(checkRes.message)
   if (!checkRes.exist) return res.status(401).redirect(FRONTEND_URL + '/mail')
-  if (checkRes.survey && !checkRes.trivia) return res.redirect(FRONTEND_URL + '/trivia')
   if (checkRes.survey && checkRes.trivia) return res.redirect(FRONTEND_URL + '/gracias')
 
   db.getConnection((err, connection) => { // **Cambio: Obtención de conexión del pool**
@@ -182,10 +182,9 @@ app.post('/trivia', async (req, res) => {
   const checkRes = await check(req, db)
   if (checkRes.err) return res.status(checkRes.status).send(checkRes.message)
   if (!checkRes.exist) return res.status(401).redirect(FRONTEND_URL + '/mail')
-  if (checkRes.survey && !checkRes.trivia) return res.redirect(FRONTEND_URL + '/trivia')
   if (checkRes.survey && checkRes.trivia) return res.redirect(FRONTEND_URL + '/gracias')
 
-  const played = req.body.played ? (req.body.played.find(i => i.category_id === req.query.category_id) ? req.body.played.find(i => i.category_id === req.query.category_id).questions_id : []) : []
+  const played = req.body.played ? (req.body.played.find(i => parseInt(i.category_id) === parseInt(req.query.category_id)) ? req.body.played.find(i => parseInt(i.category_id) === parseInt(req.query.category_id)).questions_id : []) : []
   const queryCategoryId = parseInt(req.query.category_id)
   const placeholders = played ? played.map(() => '?').join(', ') : ''
 
@@ -223,11 +222,8 @@ app.post('/trivia/send', async (req, res) => { // resultados de la trivia
   const checkRes = await check(req, db)
   if (checkRes.err) return res.status(checkRes.status).send(checkRes.message)
   if (!checkRes.exist) return res.status(401).redirect(FRONTEND_URL + '/mail')
-  if (checkRes.survey && !checkRes.trivia) return res.redirect(FRONTEND_URL + '/trivia')
   if (checkRes.survey && checkRes.trivia) return res.redirect(FRONTEND_URL + '/gracias')
-  console.log(req.body.results)
-  console.log(Array.isArray(req.body.results))
-  console.log(req.body.userInfo)
+
   if (!Array.isArray(req.body.results) || !req.body.userInfo) return res.status(400).send('Missing trivia')
   if (req.body.results.filter(i => i.question_id !== undefined && i.is_correct !== undefined && i.response_time !== undefined).length < req.body.results.length) return res.status(400).send('Missing question_id or response')
   const query = req.body.results.map(ans => '(?, ?, ?, ?)').join(', ')

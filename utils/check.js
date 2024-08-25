@@ -29,16 +29,15 @@ export const check = (req, db) => {
         }
 
         exist = true
-        if (!rows[0].bonus_category_id) {
+        if (rows[0].bonus_category_id !== null) {
           connection.release() // **Cambio: Liberar conexión**
-          return resolve({ email, id, exist, survey, trivia })
+          return resolve({ email, id, exist, survey: true, trivia: true })
         }
-        trivia = true
 
-        connection.query('SELECT COUNT(*) AS count FROM Survey_Responses WHERE user_id = ?', [id], (err, rows) => {
+        connection.query('SELECT * FROM Survey_Responses WHERE user_id = ?', [id], (err, rows) => {
           connection.release() // **Cambio: Liberar conexión**
           if (err) return resolve({ err: true, status: 500, message: 'Failed while getting survey' })
-          if (rows[0].count > 0) survey = true
+          if (rows[0]) survey = true
           resolve({ email, id, exist, survey, trivia })
         })
       })
