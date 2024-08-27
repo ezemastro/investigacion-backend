@@ -3,10 +3,10 @@ import mysql from 'mysql2'
 import cookieParser from 'cookie-parser'
 import { hash } from './utils/hash.js'
 import { userSchema } from './utils/zod.js'
-import { check } from './utils/check.js'
 import cors from 'cors'
+import dbCheck from './utils/dbCheck.js'
 
-const { PORT, FRONTEND_URL, DB_HOST, DB_USER, DB_PASSWORD, DB_DATABASE, DB_PORT } = process.env
+const { PORT, DB_HOST, DB_USER, DB_PASSWORD, DB_DATABASE, DB_PORT } = process.env
 
 const db = mysql.createPool({ // **Cambio: Creación de pool de conexiones en lugar de base de datos SQLite**
   host: DB_HOST ?? 'wvk.h.filess.io', // Cambia esto según tu configuración
@@ -26,7 +26,7 @@ app.use(cors({
 app.use(express.json())
 app.use(cookieParser())
 
-app.post('/mail', (req, res) => {
+app.post('/mail', async (req, res) => {
   const { email } = req.body
   const age = parseInt(req.body.age)
 
@@ -39,89 +39,59 @@ app.post('/mail', (req, res) => {
   }
   const hashedEmail = hash(email)
   // Uso del pool de conexiones
-  db.getConnection((err, connection) => { // **Cambio: Obtención de conexión del pool**
-    if (err) {
-      console.error(err.message)
-      return res.status(500).send('Failed while connecting to the database')
-    }
-
-    // Consulta para verificar si el email ya existe
-    connection.query('SELECT * FROM Users WHERE email = ?', [hashedEmail], (err, results) => { // **Cambio: Uso de query en lugar de get**
-      if (err) {
-        console.error(err.message)
-        connection.release() // **Cambio: Liberar conexión**
-        return res.status(500).send('Failed while getting email')
-      }
-      if (results.length > 0) {
-        connection.release() // **Cambio: Liberar conexión**
-        return res.status(409).send('Email already exists')
-      } else {
-        // Inserción del nuevo usuario
-        connection.query('INSERT INTO Users (email, age) VALUES (?, ?)', [hashedEmail, age], function (err, results) { // **Cambio: Uso de query en lugar de run**
-          if (err) {
-            console.error(err.message)
-            connection.release() // **Cambio: Liberar conexión**
-            return res.status(500).send('Failed while inserting email and age')
-          }
-
-          const id = results.insertId // **Cambio: Uso de insertId en lugar de lastID**
-
-          // Set cookies y responder
-          res
-            .clearCookie('id', { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: process.env.NODE_ENV === 'production' ? 'None' : 'lax' })
-            .clearCookie('email', { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: process.env.NODE_ENV === 'production' ? 'None' : 'lax' })
-            .cookie('id', id.toString(), { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: process.env.NODE_ENV === 'production' ? 'None' : 'lax', maxAge: 60 * 60 * 1000 })
-            .cookie('email', hashedEmail, { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: process.env.NODE_ENV === 'production' ? 'None' : 'lax', maxAge: 60 * 60 * 1000 })
-            .status(201).send('User created')
-
-          connection.release() // **Cambio: Liberar conexión**
-        })
-      }
+  dbCheck({ res, newUser: true, age, hashedEmail, db })
+    .then((result) => {
+      if (result.msg) return res.status(result.status).send(result.msg)
+      if (result.jn) return res.status(result.status).json(result.jn)
+      if (!result.result && result.result !== 0) return
+      res.status(201).json({ id: result.result })
+    }).catch(err => {
+      if (err.msg) return res.status(err.status).send(err.msg)
+      if (err.jn) return res.status(err.status).json(err.jn)
     })
-  })
-})
-
-app.get('/survey', async (req, res) => {
-  const checkRes = await check(req, db)
-  if (checkRes.err) return res.status(checkRes.status).send(checkRes.message)
-  if (!checkRes.exist) return res.status(401).json({ redirect: '/mail' })
-  if (checkRes.survey && !checkRes.trivia) return res.status(421).json({ redirect: '/trivia' })
-  if (checkRes.survey && checkRes.trivia) return res.status(421).json({ redirect: '/gracias' })
-
-  db.getConnection((err, connection) => { // **Cambio: Obtención de conexión del pool**
-    if (err) {
-      console.error(err.message)
-      return res.status(500).send('Failed while connecting to the database')
-    }
-
-    connection.query('SELECT question_id, question_text, response_type, option_1, option_2, option_3, option_4 FROM Survey_Questions', (err, rows) => { // **Cambio: Uso de query en lugar de all**
-      if (err) {
-        console.error(err.message)
-        connection.release()
-        return res.status(500).send('Failed while getting survey')
-      }
-
-      res.status(200).send(rows.map(row => ({
-        question_id: row.question_id,
-        question_text: row.question_text,
-        response_type: row.response_type,
-        options: [row.option_1, row.option_2, row.option_3, row.option_4]
-      })))
-      connection.release()
-    })
-  })
 })
 app.post('/survey', async (req, res) => {
-  const checkRes = await check(req, db)
-  if (checkRes.err) return res.status(checkRes.status).send(checkRes.message)
-  if (!checkRes.exist) return res.status(401).json({ redirect: '/mail' })
-  if (checkRes.survey && !checkRes.trivia) return res.status(421).json({ redirect: '/trivia' })
-  if (checkRes.survey && checkRes.trivia) return res.status(421).json({ redirect: '/gracias' })
+  if (!req.body?.id) return res.status(409).json({ redirect: '/' })
+  try {
+    const dbCheckRes = await dbCheck({ res, checkSurvey: true, db, id: req.body.id })
+    if (dbCheckRes.msg) return res.status(dbCheckRes.status).send(dbCheckRes.msg)
+    if (dbCheckRes.jn) return res.status(dbCheckRes.status).json(dbCheckRes.jn)
+    if (!dbCheckRes.result && dbCheckRes.result !== false) return
 
-  if (!Array.isArray(req.body)) return res.status(400).send('Missing survey')
-  const query = req.body.map(ans => '(?, ?, ?)').join(', ')
-  const values = req.body.map(ans => [ans.question_id, checkRes.id, ans.response]).flat()
-  if (req.body.filter(i => i.question_id !== undefined && i.response !== undefined).length < req.body.length) return res.status(400).send('Missing question_id or response')
+    db.getConnection((err, connection) => { // **Cambio: Obtención de conexión del pool**
+      if (err) {
+        console.error(err.message)
+        return res.status(500).send('Failed while connecting to the database')
+      }
+
+      connection.query('SELECT question_id, question_text, response_type, option_1, option_2, option_3, option_4 FROM Survey_Questions', (err, rows) => { // **Cambio: Uso de query en lugar de all**
+        if (err) {
+          console.error(err.message)
+          connection.release()
+          return res.status(500).send('Failed while getting survey')
+        }
+
+        connection.release()
+        res.status(200).send(rows.map(row => ({
+          question_id: row.question_id,
+          question_text: row.question_text,
+          response_type: row.response_type,
+          options: [row.option_1, row.option_2, row.option_3, row.option_4]
+        })))
+      })
+    })
+  } catch (err) {
+    if (err.msg) return res.status(err.status).send(err.msg)
+    if (err.jn) return res.status(err.status).json(err.jn)
+  }
+})
+app.post('/survey/send', async (req, res) => {
+  if (!req.body?.id) return res.status(409).json({ redirect: '/' })
+
+  if (req.body.survey && !Array.isArray(req.body.survey)) return res.status(400).send('Missing survey')
+  const query = req.body.survey.map(ans => '(?, ?, ?)').join(', ')
+  const values = req.body.survey.map(ans => [ans.question_id, req.body.id, ans.response]).flat()
+  if (req.body.survey.filter(i => i.question_id !== undefined && i.response !== undefined).length < req.body.length) return res.status(400).send('Missing question_id or response')
 
   db.getConnection((err, connection) => { // **Cambio: Obtención de conexión del pool**
     if (err) {
@@ -144,42 +114,42 @@ app.post('/survey', async (req, res) => {
   })
 })
 
-app.get('/trivia/categories', async (req, res) => {
-  const checkRes = await check(req, db)
-  if (checkRes.err) return res.status(checkRes.status).send(checkRes.message)
-  if (!checkRes.exist) return res.status(401).json({ redirect: '/mail' })
-  if (checkRes.survey && checkRes.trivia) return res.status(421).json({ redirect: '/gracias' })
+app.post('/trivia/categories', async (req, res) => {
+  if (!req.body?.id) return res.status(409).json({ redirect: '/' })
+  try {
+    const dbCheckRes = await dbCheck({ res, checkTrivia: true, db, id: req.body.id })
+    if (dbCheckRes.msg) return res.status(dbCheckRes.status).send(dbCheckRes.msg)
+    if (dbCheckRes.jn) return res.status(dbCheckRes.status).json(dbCheckRes.jn)
+    if (dbCheckRes.result !== false) return
 
-  db.getConnection((err, connection) => { // **Cambio: Obtención de conexión del pool**
-    if (err) {
-      console.error(err.message)
-      return res.status(500).send('Failed while connecting to the database')
-    }
-
-    // Consulta de categorías de trivia
-    connection.query(`
-      SELECT category_id, category_name FROM Trivia_Categories
-    `, function (err, rows) {
-      connection.release() // **Cambio: Liberar conexión**
+    db.getConnection((err, connection) => { // **Cambio: Obtención de conexión del pool**
       if (err) {
         console.error(err.message)
-        return res.status(500).send('Failed while getting trivia categories')
+        return res.status(500).send('Failed while connecting to the database')
       }
-      res.status(200).send(rows.map(row => ({
-        category_id: row.category_id,
-        category_name: row.category_name
-      })))
+      // Consulta de categorías de trivia
+      connection.query(`
+        SELECT category_id, category_name FROM Trivia_Categories
+      `, function (err, rows) {
+        connection.release() // **Cambio: Liberar conexión**
+        if (err) {
+          console.error(err.message)
+          return res.status(500).send('Failed while getting trivia categories')
+        }
+        res.status(200).send(rows.map(row => ({
+          category_id: row.category_id,
+          category_name: row.category_name
+        })))
+      })
     })
-  })
+  } catch (err) {
+    if (err.msg) return res.status(err.status).send(err.msg)
+    if (err.jn) return res.status(err.status).json(err.jn)
+  }
 })
 
-app.post('/trivia', async (req, res) => {
-  if (!req.query.category_id) return res.status(400).send('Missing category_id')
-
-  const checkRes = await check(req, db)
-  if (checkRes.err) return res.status(checkRes.status).send(checkRes.message)
-  if (!checkRes.exist) return res.status(401).json({ redirect: '/mail' })
-  if (checkRes.survey && checkRes.trivia) return res.status(421).json({ redirect: '/gracias' })
+app.post('/trivia', (req, res) => {
+  if (!req.query?.category_id) return res.status(400).send('Missing category_id')
 
   const played = req.body.played ? (req.body.played.find(i => parseInt(i.category_id) === parseInt(req.query.category_id)) ? req.body.played.find(i => parseInt(i.category_id) === parseInt(req.query.category_id)).questions_id : []) : []
   const queryCategoryId = parseInt(req.query.category_id)
@@ -215,16 +185,13 @@ app.post('/trivia', async (req, res) => {
   })
 })
 
-app.post('/trivia/send', async (req, res) => { // resultados de la trivia
-  const checkRes = await check(req, db)
-  if (checkRes.err) return res.status(checkRes.status).send(checkRes.message)
-  if (!checkRes.exist) return res.status(401).json({ redirect: '/mail' })
-  if (checkRes.survey && checkRes.trivia) return res.status(421).json({ redirect: '/gracias' })
+app.post('/trivia/send', (req, res) => { // resultados de la trivia+
+  if (!req.body?.id) return res.status(409).json({ redirect: '/' })
 
   if (!Array.isArray(req.body.results) || !req.body.userInfo) return res.status(400).send('Missing trivia')
   if (req.body.results.filter(i => i.question_id !== undefined && i.is_correct !== undefined && i.response_time !== undefined).length < req.body.results.length) return res.status(400).send('Missing question_id or response')
   const query = req.body.results.map(ans => '(?, ?, ?, ?)').join(', ')
-  const values = req.body.results.map(ans => [ans.question_id, checkRes.id, ans.is_correct ? 1 : 0, ans.response_time]).flat()
+  const values = req.body.results.map(ans => [ans.question_id, req.body.id, ans.is_correct ? 1 : 0, ans.response_time]).flat()
 
   db.getConnection((err, connection) => { // **Cambio: Obtención de conexión del pool**
     if (err) {
@@ -248,7 +215,7 @@ app.post('/trivia/send', async (req, res) => { // resultados de la trivia
         UPDATE Users
         SET bonus_category_id = ?
         WHERE user_id = ?
-        `, [req.body.userInfo.bonus_category_id, checkRes.id], function (err) {
+        `, [req.body.userInfo.bonus_category_id, req.body.id], function (err) {
         connection.release() // **Cambio: Liberar conexión**
         if (err) {
           console.error(err.message)
