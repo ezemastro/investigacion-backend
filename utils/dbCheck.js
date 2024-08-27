@@ -28,7 +28,7 @@ export default async function dbCheck ({ res, newUser, checkTrivia, checkSurvey,
             connection.release()
             resolve({ msg: 'Failed while getting email', status: 500 })
           }
-          if (results.length > 0) {
+          if (results && results.length > 0) {
             if (results[0].bonus_category_id) {
               connection.release()
               resolve({ status: 409, jn: { redirect: '/gracias' } })
