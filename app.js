@@ -18,10 +18,9 @@ const db = mysql.createPool({ // **Cambio: Creación de pool de conexiones en lu
 // [FRONTEND_URL, 'http://localhost:5173', 'wvk.h.filess.io', 'https://lectura-vs-conocimiento.vercel.app']
 const app = express()
 app.use(cors({
-  origin: process.env.NODE_ENV === 'production' ? 'https://lectura-vs-conocimiento.vercel.app' : 'http://localhost:5173',
+  origin: '*',
   methods: ['GET', 'POST', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
-  credentials: true
 }))
 app.use(express.json())
 app.use(cookieParser())
